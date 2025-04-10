@@ -6,8 +6,8 @@ Created with [p5.js](https://p5js.org/) and WebGL, this project allows for real-
 
 
 <div style="display: flex; gap: 20px;">
-  <img src="examples/obj_image.png" alt="Static preview" width="45%">
-  <img src="examples/example.gif" alt="GIF preview" width="45%">
+  <img src="examples/obj_image_resized.png" alt="Static preview" width="45%">
+  <img src="examples/example.gif.gif" alt="GIF preview" width="45%">
 </div>
 
 ---
