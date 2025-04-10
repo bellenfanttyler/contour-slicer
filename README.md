@@ -4,6 +4,12 @@
 
 Created with [p5.js](https://p5js.org/) and WebGL, this project allows for real-time manipulation of slicing parameters and exports results as SVG vector art.
 
+
+<div style="display: flex; gap: 20px;">
+  <img src="examples/obj_image.png" alt="Static preview" width="45%">
+  <img src="examples/example.gif" alt="GIF preview" width="45%">
+</div>
+
 ---
 
 ## ✨ Features
@@ -64,11 +70,6 @@ You can run this project directly in the [p5.js Web Editor](https://editor.p5js.
 
 ---
 
-## 📸 Preview
-
-*(Preview coming soon)*
-
----
 
 ## 🧠 Inspiration
 
