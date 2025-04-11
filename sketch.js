@@ -1,4 +1,5 @@
 let lineSpacingSlider, thicknessSlider, rotationSlider, colorPicker;
+let sliceXAngleSlider, sliceYAngleSlider, sliceZAngleSlider;
 let saveButton;
 
 let modelData;
@@ -21,8 +22,8 @@ function setup() {
   sliceZAngleSlider = createLabeledSlider("Slicing Plane Rotation (Z axis)", -7200, 7200, 0, 1);
   rotationSlider = createLabeledSlider("Object Rotation (X axis)", 0, 360, 0, 1);
 
-  createP("Line Color");
-  colorPicker = createColorPicker("#000000");
+  createP("Fill Color");
+  colorPicker = createColorPicker("#ffffff");
 
   createP();
   saveButton = createButton("Download SVG");
@@ -36,18 +37,127 @@ function draw() {
   if (!modelData) return;
 
   let spacing = lineSpacingSlider.value();
-  let thickness = thicknessSlider.value();
   rotation = rotationSlider.value();
-  let lineCol = colorPicker.color();
+  let fillCol = colorPicker.color();
 
-  stroke(lineCol);
-  strokeWeight(thickness);
-  noFill();
+  stroke(0);
+  strokeWeight(thicknessSlider.value());
 
   push();
   rotateX(rotation);
-  drawContours(spacing);
+  drawContours(spacing, fillCol);
   pop();
+}
+
+// ---- Contour Drawing with Fill ----
+
+function drawContours(spacing, fillCol) {
+  let { vertices, faces } = modelData;
+
+  let xAngle = sliceXAngleSlider.value();
+  let yAngle = sliceYAngleSlider.value();
+  let zAngle = sliceZAngleSlider.value();
+
+  let transformed = vertices.map(v => {
+    let p = v.copy();
+    p = rotateVectorZ(p, -zAngle);
+    p = rotateVectorY(p, -yAngle);
+    p = rotateVectorX(p, -xAngle);
+    return p;
+  });
+
+  let bounds = getModelBounds(transformed);
+  let yMin = bounds.minY;
+  let yMax = bounds.maxY;
+  let numSlices = floor((yMax - yMin) / spacing);
+
+  for (let i = 0; i < numSlices; i++) {
+    let y = yMin + i * spacing + spacing / 2;
+    let segments = [];
+
+    for (let face of faces) {
+      let v0 = transformed[face[0]];
+      let v1 = transformed[face[1]];
+      let v2 = transformed[face[2]];
+      let segs = sliceTriangle(v0, v1, v2, y);
+      if (segs.length > 0) {
+        segments.push(...segs);
+      }
+    }
+
+    let contours = buildContoursFromSegments(segments);
+
+    for (let contour of contours) {
+      fill(fillCol);
+      beginShape();
+      for (let pt of contour) {
+        let p = rotateVectorX(pt, xAngle);
+        p = rotateVectorY(p, yAngle);
+        p = rotateVectorZ(p, zAngle);
+        vertex(p.x, p.y, p.z);
+      }
+      endShape(CLOSE);
+    }
+  }
+}
+
+// ---- Contour Loop Stitcher ----
+
+function buildContoursFromSegments(segments) {
+  let contours = [];
+  let used = new Set();
+
+  let key = (v) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+
+  while (used.size < segments.length) {
+    let contour = [];
+    let segIdx = segments.findIndex((_, idx) => !used.has(idx));
+    if (segIdx === -1) break;
+
+    let [start, end] = segments[segIdx];
+    contour.push(start);
+    contour.push(end);
+    used.add(segIdx);
+
+    let last = end;
+
+    let closed = false;
+    while (!closed) {
+      closed = dist(contour[0].x, contour[0].y, contour[0].z, last.x, last.y, last.z) < 0.001;
+      if (closed) break;
+
+      let found = false;
+      for (let i = 0; i < segments.length; i++) {
+        if (used.has(i)) continue;
+        let [a, b] = segments[i];
+
+        if (pEquals(a, last)) {
+          contour.push(b);
+          last = b;
+          used.add(i);
+          found = true;
+          break;
+        } else if (pEquals(b, last)) {
+          contour.push(a);
+          last = a;
+          used.add(i);
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+
+    if (contour.length >= 3) {
+      contours.push(contour);
+    }
+  }
+
+  return contours;
+}
+
+function pEquals(p1, p2) {
+  return p1.dist(p2) < 0.001;
 }
 
 // ---- OBJ Parser and Normalizer ----
@@ -73,7 +183,6 @@ function parseOBJ(lines) {
     }
   }
 
-  // Normalize: center at origin, scale to fit canvas
   let bounds = getModelBounds(rawVertices);
   let center = createVector(
     (bounds.minX + bounds.maxX) / 2,
@@ -87,7 +196,7 @@ function parseOBJ(lines) {
     bounds.maxZ - bounds.minZ
   );
 
-  let scaleFactor = 200 / maxSize; // Scale model to ~200 units in size
+  let scaleFactor = 200 / maxSize;
 
   normalizedVertices = rawVertices.map(v =>
     createVector(
@@ -100,58 +209,7 @@ function parseOBJ(lines) {
   modelData = { vertices: normalizedVertices, faces };
 }
 
-function drawContours(spacing) {
-  let { vertices, faces } = modelData;
-
-  let xAngle = sliceXAngleSlider.value();
-  let yAngle = sliceYAngleSlider.value();
-  let zAngle = sliceZAngleSlider.value();
-
-  // Rotate all vertices into slice-aligned frame (reverse order of transform)
-  let transformed = vertices.map(v => {
-    let p = v.copy();
-    p = rotateVectorZ(p, -zAngle);
-    p = rotateVectorY(p, -yAngle);
-    p = rotateVectorX(p, -xAngle);
-    return p;
-  });
-
-  let bounds = getModelBounds(transformed);
-  let yMin = bounds.minY;
-  let yMax = bounds.maxY;
-  let numSlices = floor((yMax - yMin) / spacing);
-
-  for (let i = 0; i < numSlices; i++) {
-    let y = yMin + i * spacing + spacing / 2;
-    let segments = [];
-
-    for (let face of faces) {
-      let v0 = transformed[face[0]];
-      let v1 = transformed[face[1]];
-      let v2 = transformed[face[2]];
-
-      let segs = sliceTriangle(v0, v1, v2, y);
-      if (segs.length > 0) {
-        segments.push(...segs);
-      }
-    }
-
-    // Rotate slices back into original orientation
-    for (let seg of segments) {
-      let a = seg[0];
-      let b = seg[1];
-      a = rotateVectorX(a, xAngle);
-      a = rotateVectorY(a, yAngle);
-      a = rotateVectorZ(a, zAngle);
-
-      b = rotateVectorX(b, xAngle);
-      b = rotateVectorY(b, yAngle);
-      b = rotateVectorZ(b, zAngle);
-
-      line(a.x, a.y, a.z, b.x, b.y, b.z);
-    }
-  }
-}
+// ---- Slicing Logic ----
 
 function sliceTriangle(v0, v1, v2, yPlane) {
   let points = [];
@@ -185,6 +243,8 @@ function getModelBounds(vertices) {
   return { minX, maxX, minY, maxY, minZ, maxZ };
 }
 
+// ---- Rotation Helpers ----
+
 function rotateVectorX(v, angle) {
   let rad = radians(angle);
   let cosA = cos(rad);
@@ -211,6 +271,8 @@ function rotateVectorZ(v, angle) {
   let y = v.x * sinA + v.y * cosA;
   return createVector(x, y, v.z);
 }
+
+// ---- UI Helper ----
 
 function createLabeledSlider(labelText, min, max, value, step) {
   createP(labelText);
