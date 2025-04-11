@@ -15,12 +15,12 @@ function setup() {
   angleMode(DEGREES);
   noFill();
 
-  lineSpacingSlider = createLabeledSlider("Line Spacing", 1, 50, 10, 1);
+  lineSpacingSlider = createLabeledSlider("Line Spacing", 0.5, 50, 3, 0.5);
   thicknessSlider = createLabeledSlider("Line Thickness", 0.1, 5, 1, 0.1);
-  sliceXAngleSlider = createLabeledSlider("Slicing Plane Rotation (X axis)", -7200, 7200, 0, 1);
+  sliceXAngleSlider = createLabeledSlider("Slicing Plane Rotation (X axis)", -7200, 7200, 5000, 1);
   sliceYAngleSlider = createLabeledSlider("Slicing Plane Rotation (Y axis)", -7200, 7200, 0, 1);
   sliceZAngleSlider = createLabeledSlider("Slicing Plane Rotation (Z axis)", -7200, 7200, 0, 1);
-  rotationSlider = createLabeledSlider("Object Rotation (X axis)", 0, 360, 0, 1);
+  rotationSlider = createLabeledSlider("Object Rotation (X axis)", 0, 360, 180, 1);
 
   createP("Fill Color");
   colorPicker = createColorPicker("#ffffff");
@@ -45,6 +45,7 @@ function draw() {
 
   push();
   rotateX(rotation);
+  rotateY(180)
   drawContours(spacing, fillCol);
   pop();
 }
