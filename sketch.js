@@ -27,7 +27,7 @@ function setup() {
 
   createP();
   saveButton = createButton("Download SVG");
-  saveButton.mousePressed(() => save("contour_model.svg"));
+  saveButton.mousePressed(exportSVG);
 }
 
 function draw() {
@@ -273,6 +273,25 @@ function rotateVectorZ(v, angle) {
   return createVector(x, y, v.z);
 }
 
+function applyMatrixToVector(matrix, v) {
+  let x = v.x, y = v.y, z = v.z;
+  let m = matrix.mat4; // 16-element Float32Array
+  let out = createVector(
+    m[0]*x + m[4]*y + m[8]*z + m[12],
+    m[1]*x + m[5]*y + m[9]*z + m[13],
+    m[2]*x + m[6]*y + m[10]*z + m[14]
+  );
+  return out;
+}
+
+function projectToScreen(v) {
+  // Flip X and Y, and center to canvas dimensions
+  let x = width / 2 - (v.x / v.z) * 300;
+  let y = height / 2 - (v.y / v.z) * 300;
+  return { x, y, z: v.z };
+}
+
+
 // ---- UI Helper ----
 
 function createLabeledSlider(labelText, min, max, value, step) {
@@ -298,4 +317,91 @@ function createLabeledSlider(labelText, min, max, value, step) {
   });
 
   return slider;
+}
+
+function exportSVG() {
+  if (!modelData) return;
+
+  let spacing = lineSpacingSlider.value();
+  let xAngle = sliceXAngleSlider.value();
+  let yAngle = sliceYAngleSlider.value();
+  let zAngle = sliceZAngleSlider.value();
+  let rotationAngle = rotationSlider.value();
+  let strokeW = thicknessSlider.value();
+
+  // Apply slicing-plane transform
+  let transformed = modelData.vertices.map(v => {
+    let p = v.copy();
+    p = rotateVectorZ(p, -zAngle);
+    p = rotateVectorY(p, -yAngle);
+    p = rotateVectorX(p, -xAngle);
+    return p;
+  });
+
+  let bounds = getModelBounds(transformed);
+  let yMin = bounds.minY;
+  let yMax = bounds.maxY;
+  let numSlices = floor((yMax - yMin) / spacing);
+
+  let paths = [];
+
+  for (let i = 0; i < numSlices; i++) {
+    let y = yMin + i * spacing + spacing / 2;
+    let segments = [];
+
+    for (let face of modelData.faces) {
+      let v0 = transformed[face[0]];
+      let v1 = transformed[face[1]];
+      let v2 = transformed[face[2]];
+      let segs = sliceTriangle(v0, v1, v2, y);
+      if (segs.length > 0) {
+        segments.push(...segs);
+      }
+    }
+
+    let contours = buildContoursFromSegments(segments);
+
+    for (let contour of contours) {
+      // Re-apply original orientation
+      let screenPoints = contour.map(p => {
+        let worldPt = rotateVectorX(p, xAngle);
+        worldPt = rotateVectorY(worldPt, yAngle);
+        worldPt = rotateVectorZ(worldPt, zAngle);
+        worldPt = rotateVectorX(worldPt, rotationAngle);
+        worldPt = rotateVectorY(worldPt, 180); // model default rotation
+
+        let modelView = _renderer.uMVMatrix.copy();
+        let viewPt = applyMatrixToVector(modelView, worldPt);
+        let screen = projectToScreen(viewPt);
+        return screen;
+      });
+
+      // Use average Z to sort later
+      let avgZ = screenPoints.reduce((acc, p) => acc + p.z, 0) / screenPoints.length;
+
+      let d = `M ${screenPoints[0].x},${screenPoints[0].y} ` + 
+              screenPoints.slice(1).map(p => `L ${p.x},${p.y}`).join(' ');
+      paths.push({ d, z: avgZ });
+    }
+  }
+
+  // Sort paths back-to-front
+  paths.sort((a, b) => b.z - a.z);
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">\n`;
+  svg += `<g stroke="black" stroke-width="${strokeW}" fill="none">\n`;
+
+  for (let { d } of paths) {
+    svg += `<path d="${d}" />\n`;
+  }
+
+  svg += `</g>\n</svg>`;
+
+  let blob = new Blob([svg], { type: "image/svg+xml" });
+  let url = URL.createObjectURL(blob);
+  let a = createA(url, 'contour_model.svg');
+  a.attribute('download', 'contour_model.svg');
+  a.hide();
+  a.elt.click();
+  URL.revokeObjectURL(url);
 }
